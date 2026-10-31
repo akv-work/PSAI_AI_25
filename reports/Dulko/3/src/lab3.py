@@ -10,7 +10,7 @@ Y = C0 + T * (C1 - C0)
 LR = 0.3
 EE = 0.01
 MAX_EPOCHS = 10000
-SEEDS = [1, 2, 3, 4, 5]
+SEEDS = [0, 4, 5, 32, 60]
 OUT = Path(__file__).resolve().parent / "figures"
 
 
@@ -63,17 +63,14 @@ def train(activation, seed):
 
 
 def statistics(name, runs):
-    print(f"\n{name}, lr={LR}, Ee={EE}, максимум эпох={MAX_EPOCHS}")
+    print(f"\n{name}, шаг {LR}, Ee {EE}, максимум {MAX_EPOCHS} эпох")
     print("seed   эпохи      Es     accuracy     MAE    сошлось  нулевых нейронов")
     for r in runs:
         print(f"{r['seed']:4} {r['epochs']:7} {r['error']:9.6f} "
-              f"{r['accuracy']:10.2f} {r['mae']:8.4f} "
+              f"{r['accuracy']:10.0%} {r['mae']:8.4f} "
               f"{'да' if r['ok'] else 'нет':>8} {r['dead']:8}")
     epochs = [r['epochs'] for r in runs]
-    mae = [r['mae'] for r in runs]
     print(f"Сошлось {sum(r['ok'] for r in runs)}/5. Эпохи min/max: {min(epochs)}/{max(epochs)}")
-    print(f"Эпохи mean/std: {np.mean(epochs):.1f}/{np.std(epochs):.1f}; "
-          f"MAE mean/std: {np.mean(mae):.4f}/{np.std(mae):.4f}")
 
 
 def representative(runs):
@@ -83,14 +80,15 @@ def representative(runs):
 
 def plots(results):
     OUT.mkdir(exist_ok=True)
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    plt.rcParams.update({"font.size": 12})
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
     grid = np.linspace(-10, 10, 180)
     a, b = np.meshgrid(grid, grid)
     points = np.stack([a, b], axis=-1) / 10
     for j, (name, runs) in enumerate(results.items()):
         r = representative(runs)
         axes[0, 0].plot(np.arange(1, r['epochs'] + 1), r['history'],
-                        label=f"{name}, seed={r['seed']}")
+                        label=f"{name}, seed {r['seed']}")
         bars = axes[0, 1].bar(np.arange(5) + (j - 0.5) * 0.36,
                               [v['epochs'] for v in runs], 0.36, label=name)
         for bar, run in zip(bars, runs):
@@ -103,8 +101,8 @@ def plots(results):
         ax.contour(a, b, real, levels=[0], colors="black", linewidths=1)
         ax.scatter(RAW[T == 0, 0], RAW[T == 0, 1], c="green", edgecolors="black", label="класс 7")
         ax.scatter(RAW[T == 1, 0], RAW[T == 1, 1], c="purple", edgecolors="black", label="класс -7")
-        ax.set(xlabel="A", ylabel="B", title=f"{name}, seed={r['seed']}", aspect="equal")
-        ax.legend(fontsize=8)
+        ax.set(xlabel="A", ylabel="B", title=f"{name}, seed {r['seed']}", aspect="equal")
+        ax.legend(fontsize=10)
         fig.colorbar(image, ax=ax, label="Выход в исходной шкале")
     axes[0, 0].axhline(EE, color="black", linestyle=":", label="Ee")
     axes[0, 0].set(xlabel="Эпоха", ylabel="Es", yscale="log", title="Сходимость")
@@ -122,14 +120,15 @@ def show(net, a, b):
     _, y = net.forward(np.array([a, b]) / 10)
     real = C0 + y * (C1 - C0)
     closest = C0 if abs(real - C0) <= abs(real - C1) else C1
-    print(f"A={a:g}, B={b:g}: y={y:.4f}, исходная шкала={real:.4f}, класс={closest}")
+    print(f"A {a:g}, B {b:g}: y {y:.4f}, исходная шкала {real:.4f}, класс {closest}")
 
 
 def functioning(results):
     for name, runs in results.items():
-        print(f"\n{name}, seed={representative(runs)['seed']}")
+        run = representative(runs)
+        print(f"\n{name}, seed {run['seed']}")
         for a, b in np.vstack([RAW, [[6, -6], [-6, 6], [0, 0]]]):
-            show(representative(runs)['net'], a, b)
+            show(run['net'], a, b)
     print("\nВведите A B из [-10; 10]. Пустая строка: выход.")
     while True:
         try:
