@@ -115,6 +115,50 @@ def recursive(model, z, p, steps=30):
     return np.array(predictions)
 
 
+def noise_experiment(z, low, high, best, clean_runs):
+    p, n = best
+    xtr, ytr = make_windows(z, p, p, TRAIN_END)
+    xte, yte = make_windows(z, p, TRAIN_END, len(z))
+    rows = []
+    print(f"\nЭксперимент с шумом: p={p}, N={n}, sigma=0.01 в нормализованном train")
+    print("Цели и test без шума. Метрики обеих моделей на чистых данных.")
+    print("seed  эпохи чист/шум   train MAE чист/шум   test MAE чист/шум")
+    for run in clean_runs:
+        seed = run['seed']
+        noisy_z = z.copy()
+        noisy_z[:TRAIN_END] += np.random.default_rng(1000 + seed).normal(0, 0.01, TRAIN_END)
+        noisy_x, _ = make_windows(noisy_z, p, p, TRAIN_END)
+        model, history = train(noisy_x, ytr, n, seed)
+        train_metrics = metrics(model, xtr, ytr, low, high)
+        test_metrics = metrics(model, xte, yte, low, high)
+        rows.append(dict(seed=seed, model=model, history=history,
+                         train=train_metrics, test=test_metrics))
+        print(f"{seed:4} {len(run['history']):6}/{len(history):4} "
+              f"{run['train'][0]:12.4f}/{train_metrics[0]:.4f} "
+              f"{run['test'][0]:12.4f}/{test_metrics[0]:.4f}", flush=True)
+    for name, runs in [("Без шума", clean_runs), ("С шумом", rows)]:
+        print(name)
+        for part in ['train', 'test']:
+            values = np.array([r[part] for r in runs])
+            print(f"  {part}: MAE={values[:, 0].mean():.4f} +/- {values[:, 0].std():.4f}, "
+                  f"RMSE={values[:, 1].mean():.4f}, sMAPE={values[:, 2].mean():.2f}%")
+        print(f"  Не достигли Ee: {sum(r['history'][-1] > EE for r in runs)}/{len(runs)}")
+    OUT.mkdir(exist_ok=True)
+    plt.rcParams.update({"font.size": 12})
+    fig, ax = plt.subplots(figsize=(8, 4))
+    positions = np.arange(2)
+    for j, (name, runs) in enumerate([("Без шума", clean_runs), ("С шумом", rows)]):
+        means = [np.mean([r[part][0] for r in runs]) for part in ['train', 'test']]
+        stds = [np.std([r[part][0] for r in runs]) for part in ['train', 'test']]
+        ax.bar(positions + (j - 0.5) * 0.35, means, 0.35, yerr=stds, capsize=4, label=name)
+    ax.set(xticks=positions, xticklabels=['train', 'test'], ylabel="MAE", title="Обучение с шумом и без шума, среднее и std по 5 seed")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(OUT / "noise.png", dpi=150)
+    return rows
+
+
 def plots(x, z, low, high, results, best):
     OUT.mkdir(exist_ok=True)
     plt.rcParams.update({"font.size": 12})
@@ -232,6 +276,7 @@ def main():
     print(f"Seed={run['seed']}: эпох={len(run['history'])}, Es={run['history'][-1]:.8f}, "
           f"train MAE={run['train'][0]:.4f}, test MAE={run['test'][0]:.4f}")
     p = best[0]
+    noise_experiment(z, low, high, best, results[best])
     plots(x, z, low, high, results, best)
     functioning(run['model'], p, x, low, high)
 
